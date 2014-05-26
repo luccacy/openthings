@@ -5,6 +5,7 @@
 from threading import Thread, Event, Lock
 from datetime import datetime, timedelta
 from openthings.common.timeutils import *
+from openthings.taskscheduler.taskgroup import TaskGroup
 
 from logging import getLogger
 LOG = getLogger(__name__)
@@ -28,25 +29,49 @@ class Scheduler():
         """
         self._wakeup = Event()
         self._taskstore = {} 
-        self._taskgroup_threads = {}
-        self._pending_tasks = {}
+        self._taskgroup_threads = []
+        self._pending_tasks = []
         self._taskstore_lock = Lock()
+        self.daemonic = True
     
     def start(self):
-        pass
+        """
+        Starts the scheduler in a new thread.
+        """
+        if self.running:
+            raise AlreadyRunningError
+        
+        # Schedule all pending jobs
+        for taskgroup_name, task in self._pending_tasks:
+            self.add_task(taskgroup_name, task)
+        del self._pending_tasks[:]
+
+        self._stopped = False
+        self._thread = Thread(target=self._main_loop, name='TaskScheduler')
+#         self._thread.setDaemon(self.daemonic)
+        self._thread.start()
     
     def shutdown(self):
         pass
     
+    @property
+    def running(self):
+        return not self._stopped and self._thread and self._thread.isAlive()
+    
     def add_taskgroup(self, taskgroup_name):
+        taskgroup = None
         self._taskstore_lock.acquire()
         try:
+            print 'add task group'
             if taskgroup_name in self._taskstore:
                 raise KeyError('Taskgroup "%s" is already in use' % taskgroup_name)
-            taskgroup = []
+            taskgroup = TaskGroup(taskgroup_name, None, self._taskgroup_threads)
+            self._taskgroup_threads.append(taskgroup)
             self._taskstore[taskgroup_name] = taskgroup
         finally:
             self._taskstore_lock.release()
+        
+        return taskgroup
         
     def del_taskgroup(self, taskgroup_name):    
         self._taskstore_lock.acquire()
@@ -63,12 +88,16 @@ class Scheduler():
         taskgroup_name: task list to store tasks belongs to the same type
         task: the speciled task 
         """
-        self._taskstore_lock.acquire()
+        print 'before acq'
+        
+        print 'after acq'
         taskgroup = self._taskstore.get(taskgroup_name, None)
+        print taskgroup
         if taskgroup is  None:
-            self.add_taskgroup(taskgroup_name)
-            
-        taskgroup.append(task)
+            taskgroup = self.add_taskgroup(taskgroup_name)
+        print 'add task'
+        self._taskstore_lock.acquire()
+        taskgroup.add_task(task)
         self._taskstore_lock.release()
         
         self._wakeup.set()
@@ -79,7 +108,7 @@ class Scheduler():
         if taskgroup is  None:
             raise KeyError('No such taskgroup "%s"' % taskgroup_name)
             
-        taskgroup.remove(task)
+        taskgroup.del_task(task)
         self._taskstore_lock.release()
     
     def update_task(self):
@@ -97,31 +126,34 @@ class Scheduler():
         and figures out the next wakeup time.
         """
         next_wakeup_time = None
-        self._jobstores_lock.acquire()
+        self._taskstore_lock.acquire()
         try:
             for taskgroup_name, taskgroup in self._taskstore.iteritems():
-                taskgroup.start()
-                self._taskgroup_threads[taskgroup_name]['status'] = 'running'
+                print '/////%s' % taskgroup_name
+                if taskgroup.get_status() != 'running':
+                    taskgroup.start()
+                
+            return next_wakeup_time
+        finally:
+            self._taskstore_lock.release()
         
-        
-    
-    
     
     def _main_loop(self):
         """
         main loop to execute tasks
         """
-        LOG.info("Task scheduler started")
+        print("Task scheduler started")
         self._wakeup.clear()
         
         while not self._stopped:
+            print 'while thread'
             now = datetime.now()
             next_wakeup_time = self._process_tasks(now)
             
             if next_wakeup_time is not None:
                 """fix me to get wait_seconds"""
                 wait_seconds = time_difference(next_wakeup_time, now)
-                LOG.debug('Next wakeup is due at %s (in %f seconds)',
+                print('Next wakeup is due at %s (in %f seconds)',
                              next_wakeup_time, wait_seconds)
                 try:
                     self._wakeup.wait(wait_seconds)
@@ -129,7 +161,7 @@ class Scheduler():
                     pass
                 self._wakeup.clear()
             else:
-                LOG.debug('No jobs; waiting until a job is added')
+                print('No jobs; waiting until a job is added')
                 try:
                     self._wakeup.wait()
                 except IOError:  # Catch errno 514 on some Linux kernels
