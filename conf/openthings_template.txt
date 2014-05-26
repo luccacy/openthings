@@ -1,0 +1,8 @@
+[DEFALUT]
+store=database
+store_endpoint=mysql://
+or 
+store=http
+store_endpoint=http://
+
+port=9986

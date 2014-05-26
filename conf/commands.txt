@@ -1,0 +1,10 @@
+{"commands":
+	{"sensor0":
+		{"id":"1", "command":"read", "code":"#R#", "wrpper":"openthings.taskwrappers.serialwrapper"},
+		{"id":"2", "command":"write", "code":"#W#", "wrpper":"openthings.taskwrappers.serialwrapper"}
+	},
+	{"sensor1":
+		{"id":"1", "command":"read", "code":"#R#", "wrpper":"openthings.taskwrappers.serialwrapper"},
+		{"id":"2", "command":"write", "code":"#W#", "wrpper":"openthings.taskwrappers.serialwrapper"}
+	}
+}
