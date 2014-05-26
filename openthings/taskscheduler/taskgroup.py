@@ -60,7 +60,7 @@ class TaskGroup(Thread):
 #             self._vsensor.open()
 #         else:
 #             raise NoTaskError
-            
+        self._wakeup.clear()
         while not self._stopped:
             print '===taskgroup : %s' % self._taskgroup
             if not self._taskgroup: 
@@ -80,7 +80,7 @@ class TaskGroup(Thread):
                 self._wakeup.wait()
             except IOError:
                 pass
-            
+            self._wakeup.clear()
             time.sleep(1)
 # 
 #         self._vsensor.close()
